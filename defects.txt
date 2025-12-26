@@ -1,0 +1,39 @@
+Defect ID: DOC-001
+Description: README shows a non-existent API call `configure({ retryCount: 0 })` and suggests invalid value 0.
+Failing example (README.md, snippet):
+```js
+configure({
+  retryCount: 0
+})
+```
+Error trace / behavior:
+- Reproducing by running `node test_configure.js` containing `configure({ retryCount: 0 })` results in: `ReferenceError: configure is not defined` (because no such function is exported).
+- Additionally, even if such a function existed, the value `retryCount: 0` would trigger `Error("retryCount must be between 1 and 5")` from `input.ts`.
+Suggested fix:
+- Remove or replace the `configure` snippet with correct usage examples of `retry`. Document valid range (1–5) and default (3).
+
+---
+Defect ID: CODE-001
+Description: `retry` implementation resets `attempts` on recursive calls causing effectively unbounded recursion when the retried function always rejects; this can cause a `RangeError: Maximum call stack size exceeded`.
+Failing example (repro):
+```js
+// test_fail.js
+const { retry } = require('./input');
+retry(() => Promise.reject(new Error('always fail')), { retryCount: 2 });
+```
+Error trace (observed / expected):
+- After repeated rejections, Node will show: `RangeError: Maximum call stack size exceeded` (stack overflow) and the process may crash.
+Reproduction steps:
+1. Add `input.js` (JS equivalent of `input.ts`) and the snippet above in `test_fail.js`.
+2. Run: `node test_fail.js` — observe stack overflow.
+Code citation: `input.ts` lines 17, 19-25 (attempt variable and recursive call):
+- Line 17: `let attempts = 0`
+- Lines 19-25: `return fn().catch(async (err) => { ... attempts++ return retry(fn, { retryCount }) })`
+Root cause:
+- `attempts` is a local variable per invocation; each recursive `retry` call creates a new `attempts` initialized to 0, so the check `if (attempts >= retryCount)` never becomes true; recursion continues until stack overflow.
+Suggested fix:
+- Use an iterative retry loop or pass the attempt counter as part of recursion so it is decremented/incremented correctly. Example fix (see README suggested fix snippet): iterate up to `retryCount` and throw last error if all attempts fail.
+
+---
+Notes:
+- These defects are distinct: DOC-001 is purely documentation, CODE-001 is a code correctness bug. Corrected documentation should: remove the broken `configure` example, show how to call `retry`, state default and valid bounds, and call out the current code bug as an edge case (and provide the suggested fix).

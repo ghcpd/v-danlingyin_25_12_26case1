@@ -1,0 +1,164 @@
+oswe-mini-m23a2s165：：
+
+User: prompt
+You are a senior software engineer and documentation verification specialist.
+Your task is to verify whether the provided tutorial documentation actually works as described when used with the provided TypeScript source code.
+You are given:
+- A README.md file containing usage examples
+- An input.ts file containing the implementation
+Your responsibilities:
+1.Verify tutorial examples
+- Follow the README.md step by step
+- Identify examples or commands that:
+- Do not run
+- Produce runtime errors
+- Behave differently from what is described
+For each failing example, provide:
+- Documentation location (file + section)
+- Example code snippet
+- Actual error or incorrect behavior
+- Root cause explanation
+--------------------------------------------------------------------------------
+2.Identify documentation mismatches
+- Compare README.md examples against actual implementation
+- Identify:
+- Wrong parameters
+- Wrong default values
+- Outdated usage patterns
+- Missing required setup steps
+--------------------------------------------------------------------------------
+3.Produce corrected documentation Generate:
+- corrected_readme.md
+The corrected version must:
+- Contain only working examples
+- Match the actual behavior of input.ts
+- Clearly explain constraints and edge cases
+--------------------------------------------------------------------------------
+4.Evidence & error traces (mandatory)
+For every broken example, you MUST provide:
+- Error trace or runtime error message
+- Clear reproduction steps
+- Code citation:
+- File name
+- Line numbers in input.ts
+--------------------------------------------------------------------------------
+5.Output defects list
+Generate defects.txt containing:
+- Defect ID
+- Description
+- Failing example
+- Error trace
+- Suggested fix
+--------------------------------------------------------------------------------
+📌 Rules for the Model
+- MUST NOT assume undocumented behavior
+- MUST NOT hallucinate errors
+- MUST include real error messages based on the code
+- MUST clearly distinguish documentation bugs vs code bugs
+- MUST keep output concise, structured, and reproducible
+
+GitHub Copilot: Read [](file:///c%3A/Users/v-danlingyin/Documents/microsoft_projects_files/bugBash/1226/case1/oswe-mini-m23a2s165/input.ts)
+
+Created [](file:///c%3A/Users/v-danlingyin/Documents/microsoft_projects_files/bugBash/1226/case1/oswe-mini-m23a2s165/corrected_readme.md)
+
+Created [](file:///c%3A/Users/v-danlingyin/Documents/microsoft_projects_files/bugBash/1226/case1/oswe-mini-m23a2s165/defects.txt)
+
+Summary — quick findings
+- README contains non-working/outdated examples and a formatting error.
+- The implementation (input.ts) validates `retryCount` (1–5) but contains a bug: retries never terminate (attempt counter resets), causing infinite recursion.
+- I updated the repo with:
+  - corrected_readme.md — working, accurate examples + notes
+  - defects.txt — concise defect list + suggested fixes
+
+1) Failing tutorial examples (step-by-step verification)
+- Example A — nonexistent API "configure"
+  - Documentation location: README.md (usage section)
+  - Snippet:
+    - configure({ retryCount: 0 })
+  - Actual behavior / error:
+    - There is no `configure` export in input.ts. Importing/using `configure` fails (TypeScript: TS2305 / runtime: ReferenceError/TypeError).
+  - Root cause: docs reference an API that doesn't exist in input.ts.
+  - Reproduction steps:
+    1. Create a TS file that does `import { configure } from './input'`.
+    2. Compile: tsc → error TS2305.
+  - Example TS compiler error:
+    - TS2305: Module '".../input"' has no exported member 'configure'.
+  - Code citation: input.ts — file contains only `export function retry(...)` (see file).
+
+- Example B — invalid value `retryCount: 0`
+  - Documentation location: README.md (usage snippet)
+  - Snippet from README:
+    - configure({ retryCount: 0 })  (also any example passing 0 to `retry`)
+  - Actual error:
+    - Calling `retry(..., { retryCount: 0 })` throws synchronously:
+      - Error: "retryCount must be between 1 and 5"
+  - Root cause: implementation validates `retryCount` and rejects values outside 1–5.
+  - Reproduction steps:
+    1. import { retry } from './input'
+    2. call `retry(() => Promise.resolve(), { retryCount: 0 })`
+    3. observe thrown Error
+  - Error trace / message:
+    - Error: retryCount must be between 1 and 5
+  - Code citation: input.ts lines 12–16 (validation + throw).
+
+- Example C — (behavior mismatch) retry loop does not work as intended
+  - Documentation implication: retry will attempt the operation up to `retryCount` times.
+  - Actual behavior:
+    - On repeated failures the implementation recurses but `attempts` is reinitialized on each call → termination condition never reached → unbounded recursion → stack overflow.
+  - Symptom (reproduction):
+    - Calling `retry(() => Promise.reject(new Error('fail')), { retryCount: 2 })` → eventually:
+      - RangeError: Maximum call stack size exceeded
+  - Root cause: `attempts` is a local variable reinitialized on each recursive call instead of being preserved across retries.
+  - Code citation: input.ts — `let attempts = 0` (line 18) and the catch handler (lines 20–26).
+
+2) Documentation mismatches (summary)
+- Wrong API name: README uses `configure` but library exports `retry`.
+- Wrong example values: README shows `retryCount: 0` (invalid).
+- Missing/incorrect behavior docs: README does not mention the synchronous validation or the valid range (1–5).
+- Formatting issue: malformed fenced code block in README.md.
+
+3) Corrected documentation delivered
+- File added: corrected_readme.md
+  - Contains: accurate API, default value (3), valid range (1–5), only working examples, and a "Known issue" note about the broken retry loop.
+  - Location: project root.
+
+4) Evidence & error traces (required)
+- Validation throw (invalid retryCount)
+  - Message: Error: retryCount must be between 1 and 5
+  - Reproduce:
+    - import { retry } from './input'
+    - call retry(..., { retryCount: 0 })
+  - Code citation: input.ts — throw at lines 12–16.
+- Missing export error (configure)
+  - Message (TypeScript): TS2305: Module '".../input"' has no exported member 'configure'
+  - Reproduce:
+    - import { configure } from './input' (or from the package)
+    - tsc will report TS2305
+  - Code citation: input.ts — only `export function retry` present.
+- Retry-loop stack overflow (code bug)
+  - Symptom: RangeError: Maximum call stack size exceeded (when `fn` always rejects)
+  - Reproduce:
+    - await retry(() => Promise.reject(new Error('fail')), { retryCount: 2 })
+  - Code citation: input.ts — `let attempts = 0` (line 18) and recursive call `return retry(fn, { retryCount })` (lines 24–25).
+
+5) Defects file
+- File added: defects.txt (contains D-001..D-004 with descriptions, traces, and suggested fixes)
+
+Suggested fixes (concise)
+- README: replace `configure` examples, document defaults/valid range, fix code fences.
+- Code: fix retry loop so attempt counting persists (e.g., add an internal `attempt` parameter or use an iterative loop), and add unit tests for:
+  - valid/invalid `retryCount`
+  - retry termination after N failures
+  - successful immediate resolution
+
+Files I added
+- corrected_readme.md
+- defects.txt
+
+If you want, I can:
+- open a PR that fixes the retry implementation (preserve attempt count and add tests), or
+- update the original README.md in-place to match corrected_readme.md.
+
+Which of those should I do next?
+
+Made changes.

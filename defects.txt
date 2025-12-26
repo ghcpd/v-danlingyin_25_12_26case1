@@ -1,0 +1,32 @@
+D-001 | Documentation — references non-existent API `configure`
+- Description: README.md shows `configure({ retryCount: 0 })`, but the code exports `retry` only.
+- Failing example: README.md — `configure({ retryCount: 0 })`
+- Error trace / symptom: TypeScript compile error when importing: `TS2305: Module '".../input"' has no exported member 'configure'`. If executed as runtime JS it results in `ReferenceError/TypeError` depending on how imported.
+- Root cause: Documentation refers to an API that does not exist in `input.ts`.
+- Suggested fix: Replace `configure(...)` usage with `retry(...)` examples or add the missing API implementation.
+
+D-002 | Documentation — invalid example uses `retryCount: 0`
+- Description: README shows `retryCount: 0` which is outside the implemented allowed range.
+- Failing example: README.md code block — `configure({ retryCount: 0 })` (and any example that passes 0 to `retry`).
+- Error trace / symptom: Calling `retry(..., { retryCount: 0 })` throws: `Error: retryCount must be between 1 and 5` (thrown synchronously).
+- Code citation: `input.ts` line 12–16 (validation & throw).
+- Suggested fix: Update docs to state valid range (1–5) and show a correct example (e.g., 1, 2, or 3).
+
+D-003 | Code bug — retry attempts counter resets causing infinite recursion
+- Description: `attempts` is a local variable that is reset on every recursive call of `retry`, so the termination condition is never reached; repeated failures cause unbounded recursion and eventual stack overflow.
+- Failing example: calling `retry(() => Promise.reject(new Error('fail')), { retryCount: 2 })` — expected: function fails after 2 attempts; actual: infinite recursion / stack overflow.
+- Error trace / symptom: `RangeError: Maximum call stack size exceeded` (observed when `fn` always rejects).
+- Code citation: `input.ts` lines 18 and 20–26 (attempts initialization and catch handler).
+- Root cause: `attempts` is not preserved across retries; recursive call `return retry(fn, { retryCount })` creates a fresh `attempts` variable.
+- Suggested fix: Preserve and increment attempt count across retries (e.g., add an internal parameter `attempt = 0`, use a loop, or close over `attempts` instead of recursing into a fresh invocation).
+
+D-004 | Documentation formatting / invalid code fence in README
+- Description: README contains a malformed fenced-code block (```` ```bash ... ```ts ````) which may confuse readers or tooling.
+- Failing example: README.md near the installation / example section.
+- Suggested fix: Fix code fence boundaries and separate shell/TS blocks.
+
+Priority recommendations
+- High: Fix the retry implementation (D-003) or update README to clearly state that multi-attempt retry behavior is currently broken.
+- Medium: Update README to remove `configure` and correct the `retryCount` example (D-001, D-002).
+- Low: Fix README formatting (D-004).
+

@@ -1,0 +1,253 @@
+================================================================================
+DOCUMENTATION VERIFICATION REPORT - DEFECTS
+================================================================================
+
+DEFECT ID: DEF-001
+TITLE: Non-existent configure() function in documentation
+SEVERITY: Critical
+LOCATION: README.md (line 9)
+STATUS: Documentation Bug
+
+FAILING EXAMPLE:
+```ts
+configure({
+  retryCount: 0
+})
+```
+
+ERROR MESSAGE:
+ReferenceError: configure is not defined
+
+ROOT CAUSE:
+The configure() function does not exist in input.ts. The only export is:
+- retry(fn, options) - documented at input.ts lines 8-26
+
+REPRODUCTION STEPS:
+1. Open input.ts
+2. Check exports - only retry() is exported
+3. Try to use configure() - will fail
+
+CODE CITATION:
+- File: input.ts
+- Lines: 8-26 (only exported function)
+- Missing function reference: configure()
+
+IMPACT:
+Any documentation that refers to configure() is incorrect and will fail at runtime.
+
+SUGGESTED FIX:
+Remove configure() example from README.md. Replace with actual retry() usage:
+
+```ts
+import { retry } from './input.ts'
+
+// Example: retry a promise-returning function
+const result = await retry(
+  () => fetch('https://api.example.com/data'),
+  { retryCount: 3 }
+)
+```
+
+================================================================================
+
+DEFECT ID: DEF-002
+TITLE: Invalid retryCount parameter value in documentation
+SEVERITY: Critical
+LOCATION: README.md (line 10)
+STATUS: Documentation Bug + Code Validation Mismatch
+
+FAILING EXAMPLE:
+```ts
+configure({
+  retryCount: 0  // <-- INVALID VALUE
+})
+```
+
+ERROR MESSAGE:
+Error: retryCount must be between 1 and 5
+
+ROOT CAUSE:
+The implementation validates retryCount at input.ts lines 12-14:
+
+```typescript
+if (retryCount < 1 || retryCount > 5) {
+  throw new Error("retryCount must be between 1 and 5")
+}
+```
+
+Passing retryCount: 0 violates this constraint.
+
+REPRODUCTION STEPS:
+1. Call retry(fn, { retryCount: 0 })
+2. Function immediately throws: "retryCount must be between 1 and 5"
+3. Example fails
+
+CODE CITATION:
+- File: input.ts
+- Lines: 12-14 (validation logic)
+- Invalid value: 0
+- Valid range: 1-5
+
+IMPACT:
+Documentation example is untestable and would break any code following it.
+
+SUGGESTED FIX:
+Use valid retryCount values (1-5):
+
+```ts
+// Valid examples:
+retry(fetchData, { retryCount: 1 })  // minimum
+retry(fetchData, { retryCount: 3 })  // recommended
+retry(fetchData, { retryCount: 5 })  // maximum
+```
+
+================================================================================
+
+DEFECT ID: DEF-003
+TITLE: Incomplete README.md documentation
+SEVERITY: High
+LOCATION: README.md (entire file)
+STATUS: Documentation Bug
+
+FAILING EXAMPLE:
+The entire README.md file is truncated and incomplete:
+- Installation section is incomplete (line 4-5)
+- No API documentation section
+- No usage examples for the retry() function
+- No explanation of RetryOptions type
+- No error handling examples
+
+EXAMPLE:
+```
+## Installation
+
+```bash
+pnpm install retry-util
+
+
+```ts
+configure({...
+```
+
+The markdown code block at line 6 is not closed, and the code block at line 8 is not opened properly.
+
+ERROR:
+- Markdown syntax is broken (unclosed backticks)
+- Documentation is incomplete
+
+ROOT CAUSE:
+README.md appears to be truncated or improperly formatted. It does not contain:
+1. Complete installation instructions
+2. Usage documentation for retry()
+3. Examples of actual working code
+4. Explanation of parameters
+
+CODE CITATION:
+- File: README.md
+- Lines: 1-11 (entire file)
+- Issue: Incomplete and malformed
+
+IMPACT:
+Users cannot understand how to use the library based on this documentation.
+
+SUGGESTED FIX:
+Provide complete, working documentation. See corrected_readme.md for the corrected version.
+
+================================================================================
+
+DEFECT ID: DEF-004
+TITLE: Logic flaw in retry implementation
+SEVERITY: Critical
+LOCATION: input.ts (lines 18-26)
+STATUS: Code Bug (affects documentation accuracy)
+
+ISSUE:
+The attempts variable is initialized outside the recursive function but never
+resets on recursive calls, causing the retry mechanism to fail.
+
+FAILING CODE:
+```typescript
+let attempts = 0
+
+return fn().catch(async (err) => {
+  if (attempts >= retryCount) {
+    throw err
+  }
+  attempts++
+  return retry(fn, { retryCount })  // <-- Recursive call, but attempts not reset
+})
+```
+
+PROBLEM EXPLANATION:
+1. First call: attempts = 0
+2. First catch: attempts increments to 1, recursive call made
+3. Second call: attempts = 1 (not reset!)
+4. Second catch: if attempts (1) >= retryCount (3), condition may still be false
+   BUT attempts increments to 2
+5. The counter keeps incrementating but the retryCount decrement is never applied
+
+This means the retry logic doesn't properly count retries across recursive calls.
+
+EXAMPLE FAILURE:
+```typescript
+const fn = () => Promise.reject(new Error("fail"))
+await retry(fn, { retryCount: 3 })
+// Expected: Retry 3 times, then throw
+// Actual: Logic flaw causes unpredictable behavior
+```
+
+ROOT CAUSE:
+The attempts variable is shared across the closure scope and never resets on
+recursive retry() calls. Each recursive call should have its own attempt counter
+or decrement retryCount instead.
+
+CODE CITATION:
+- File: input.ts
+- Lines: 18-26 (retry function body)
+- Specific issue: Line 18 initializes attempts outside catch, line 27 doesn't
+  reset or decrement retryCount on recursive call
+
+IMPACT:
+The retry mechanism may not work as expected when multiple retries are needed.
+Documentation claiming "retryCount: 3 means 3 retries" is inaccurate due to
+this logic flaw.
+
+SUGGESTED FIX:
+Decrement retryCount on each recursive call instead of using attempts counter:
+
+```typescript
+export function retry(
+  fn: () => Promise<unknown>,
+  options: RetryOptions = {}
+) {
+  const retryCount = options.retryCount ?? 3
+
+  if (retryCount < 1 || retryCount > 5) {
+    throw new Error("retryCount must be between 1 and 5")
+  }
+
+  return fn().catch(async (err) => {
+    if (retryCount <= 1) {
+      throw err
+    }
+    return retry(fn, { retryCount: retryCount - 1 })
+  })
+}
+```
+
+================================================================================
+
+SUMMARY OF DEFECTS
+================================================================================
+
+Total Defects Found: 4
+
+CRITICAL SEVERITY:
+- DEF-001: Non-existent configure() function (Documentation Bug)
+- DEF-002: Invalid retryCount: 0 parameter (Documentation + Code Bug)
+- DEF-004: Retry logic flaw (Code Bug affecting documentation)
+
+HIGH SEVERITY:
+- DEF-003: Incomplete README.md (Documentation Bug)
+
+================================================================================

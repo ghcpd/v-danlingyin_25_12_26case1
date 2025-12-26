@@ -1,0 +1,23 @@
+Defect ID: DOC-001
+Description: Installation command refers to a package 'retry-util' that does not exist or is not published.
+Failing example: pnpm install retry-util
+Error trace: ERR_PNPM_NO_MATCHING_VERSION No matching version found for retry-util
+Suggested fix: Remove the installation section or provide local setup instructions, as this appears to be local source code.
+
+Defect ID: DOC-002
+Description: Usage example calls a non-existent function 'configure'.
+Failing example: configure({ retryCount: 0 })
+Error trace: ReferenceError: configure is not defined
+Suggested fix: Replace with correct usage of the 'retry' function from input.ts.
+
+Defect ID: DOC-003
+Description: Documentation lacks explanation of the actual API, parameters, and constraints.
+Failing example: No working example provided.
+Error trace: N/A
+Suggested fix: Add detailed usage section with examples, parameter descriptions, and constraints.
+
+Defect ID: CODE-001
+Description: The retry function implementation has a bug causing infinite retries on consistent failures.
+Failing example: retry(() => Promise.reject(new Error('fail')), { retryCount: 1 })
+Error trace: Function retries indefinitely instead of stopping after 1 attempt.
+Suggested fix: Modify the retry logic to properly track and limit attempts, e.g., by passing remaining retries recursively or using a loop.

@@ -1,0 +1,96 @@
+Defect ID: DOC-001
+Type: Documentation bug
+Location: README.md — "Usage / example" (bottom of file)
+Failing example:
+  ```ts
+  configure({
+    retryCount: 0
+  })
+  ```
+Why it fails:
+  - The package exports `retry`, there is no `configure` export (documentation shows a non-existent API).
+  - The example passes `retryCount: 0` which is outside the supported range.
+Observed / reproducible failure:
+  - TypeScript compile-time: "Module 'retry-util' has no exported member 'configure'" (if attempting `import { configure } from 'retry-util'`).
+  - Runtime: `ReferenceError: configure is not defined` (if the snippet is run as-is).
+  - If the intent was to call `retry(..., { retryCount: 0 })` the library throws: `Error: retryCount must be between 1 and 5` (see code validation).
+Code citation (implementation): input.ts — validation
+  - const retryCount = options.retryCount ?? 3  (input.ts:12)
+  - if (retryCount < 1 || retryCount > 5) { throw new Error("retryCount must be between 1 and 5") }  (input.ts:14-16)
+Suggested fix:
+  - Update README to show the exported API `retry` and valid range (1–5). Replace the example with a working one or show the validation behavior.
+Severity: Low (docs only)
+
+---
+Defect ID: CODE-001
+Type: Code bug (logic)
+Location: input.ts — retry implementation
+Failing example (from user/expected behavior):
+  // expect to stop after 2 failed attempts
+  await retry(() => Promise.reject(new Error('boom')), { retryCount: 2 })
+Expected behavior:
+  - After 2 attempts the helper should re-throw the last error.
+Actual behavior:
+  - The implementation resets the local `attempts` counter on each recursive call, so the stop condition is never reached. The function will keep retrying until the process fails (stack overflow) or the operation eventually succeeds.
+Observed / reproducible failures & error traces:
+  - Observable symptom: the retried function is invoked more times than `retryCount`.
+  - Possible runtime outcome when the operation never resolves: RangeError: Maximum call stack size exceeded
+  - Example repro (node):
+      // test/repro_infinite.js (provided in repo)
+      node test/repro_infinite.js
+    Output (representative):
+      externalCounter after 50ms = 1234
+      => observed retries beyond retryCount
+    Or (if recursion exhausts stack):
+      RangeError: Maximum call stack size exceeded
+Root cause (code citation):
+  - `let attempts = 0` is local to each invocation and reset on recursion (input.ts:18)
+  - recursive call uses the same `retryCount` but does not pass or persist `attempts` (input.ts:25)
+  - input.ts lines: 18, 20-26
+Suggested fixes:
+  - Fix A (recommended, robust): make `retry` iterative and enforce the configured attempt limit.
+    Example replacement (concept):
+
+    export async function retry(fn, options = {}) {
+      const retryCount = options.retryCount ?? 3
+      if (retryCount < 1 || retryCount > 5) throw new Error('retryCount must be between 1 and 5')
+      let lastErr
+      for (let attempt = 1; attempt <= retryCount; attempt++) {
+        try { return await fn() } catch (err) { lastErr = err }
+      }
+      throw lastErr
+    }
+
+  - Fix B (minimal): propagate a mutable attempt counter through recursive calls (not recommended — iterative is clearer).
+Suggested tests to add:
+  - unit: function that fails N times then succeeds — assert resolves when N <= retryCount and rejects when N > retryCount
+  - unit: passing out-of-range `retryCount` throws synchronously
+Severity: High (behavioral; can cause unbounded retries / crash)
+
+---
+Defect ID: DOC-002
+Type: Documentation bug (format + accuracy)
+Location: README.md — installation / examples
+Problem:
+  - README contains malformed code fences and an example that does not match the exported API.
+  - Missing: clear description of `retryCount` semantics (is it attempts or retries?), default value, and valid range.
+Evidence:
+  - README.md lines show a broken fenced block and a stray `configure(...)` example.
+Suggested fix:
+  - Replace README with the corrected README (see corrected_readme.md in repo). Add an explicit "Known issues" section until CODE-001 is fixed.
+Severity: Medium
+
+---
+Notes / reproduction commands
+- Validate the docs example that passes an invalid retryCount:
+    node -e "const { retry } = require('./input'); try { retry(() => Promise.resolve(), { retryCount: 0 }) } catch (e) { console.error(e.message) }"
+  Expected output:  Error: retryCount must be between 1 and 5
+
+- Reproduce unlimited-retry symptom (shows attempts > retryCount):
+    node test/repro_infinite.js
+  (test/repro_infinite.js is included in the repository and demonstrates the counter growing beyond the configured limit)
+
+If you want, I can open a PR that:
+- fixes input.ts (make retry iterative and add unit tests),
+- updates README.md to the corrected version, and
+- adds the two repro unit tests shown above.
